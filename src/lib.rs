@@ -1,4 +1,5 @@
 use std::{
+    fmt::{self, Debug},
     iter::{Enumerate, FromIterator},
     marker::PhantomData,
     mem::replace,
@@ -37,6 +38,17 @@ impl<K, V> VecMap<K, V> {
     fn ensure_index(&mut self, index: usize) {
         let iter = (self.vec.len()..=index).into_iter().map(|_| None);
         self.vec.extend(iter);
+    }
+
+    pub fn entry(&mut self, key: K) -> Entry<K, V>
+    where
+        K: Clone + Into<usize>,
+    {
+        if self.contains_key(&key) {
+            Entry::Occupied(OccupiedEntry { key, vec: self })
+        } else {
+            Entry::Vacant(VacantEntry { key, vec: self })
+        }
     }
 
     pub fn get(&self, key: &K) -> Option<&V>
@@ -212,6 +224,81 @@ where
     }
 }
 
+pub enum Entry<'a, K: 'a, V: 'a> {
+    Occupied(OccupiedEntry<'a, K, V>),
+    Vacant(VacantEntry<'a, K, V>),
+}
+
+impl<'a, K, V> Entry<'a, K, V> {
+    pub fn or_insert(self, default: V) -> &'a mut V
+    where
+        K: Clone + Into<usize>,
+    {
+        match self {
+            Self::Occupied(o) => o.into_mut(),
+            Self::Vacant(v) => v.insert(default),
+        }
+    }
+
+    /// Ensures a value is in the entry by inserting the result of the default function if empty,
+    /// and returns a mutable reference to the value in the entry.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vec_map::VecMap;
+    ///
+    /// let mut map: VecMap<usize, String> = VecMap::new();
+    /// let s = "hoho".to_string();
+    ///
+    /// map.entry(2).or_insert_with(|| s);
+    ///
+    /// assert_eq!(map.get(&2).unwrap().clone(), "hoho".to_string());
+    /// ```
+    pub fn or_insert_with<F>(self, default: F) -> &'a mut V
+    where
+        F: FnOnce() -> V,
+        K: Clone + Into<usize>,
+    {
+        match self {
+            Self::Occupied(o) => o.into_mut(),
+            Self::Vacant(v) => v.insert(default()),
+        }
+    }
+
+    pub fn key(&self) -> &K {
+        match self {
+            Self::Occupied(o) => o.key(),
+            Self::Vacant(v) => v.key(),
+        }
+    }
+
+    pub fn and_modify<F>(self, f: F) -> Self
+    where
+        F: FnOnce(&mut V),
+        K: Clone + Into<usize>,
+    {
+        match self {
+            Self::Occupied(mut o) => {
+                f(o.get_mut());
+                Self::Occupied(o)
+            }
+            Self::Vacant(v) => Self::Vacant(v),
+        }
+    }
+
+    pub fn or_default(self) -> &'a mut V
+    where
+        K: Clone + Into<usize>,
+        V: Default,
+    {
+        match self {
+            Self::Occupied(o) => o.into_mut(),
+            Self::Vacant(v) => v.insert(Default::default()),
+        }
+    }
+}
+
 pub struct IntoIter<K, V> {
     _k: PhantomData<K>,
     it: Enumerate<std::vec::IntoIter<Option<V>>>,
@@ -379,6 +466,95 @@ where
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.0.size_hint()
+    }
+}
+
+pub struct OccupiedEntry<'a, K, V> {
+    key: K,
+    vec: &'a mut VecMap<K, V>,
+}
+
+impl<'a, K, V> OccupiedEntry<'a, K, V> {
+    pub fn get(&self) -> &V
+    where
+        K: Clone + Into<usize>,
+    {
+        self.vec.get(&self.key).unwrap()
+    }
+
+    pub fn get_mut(&mut self) -> &mut V
+    where
+        K: Clone + Into<usize>,
+    {
+        self.vec.get_mut(&self.key).unwrap()
+    }
+
+    pub fn insert(&mut self, value: V) -> V
+    where
+        K: Clone + Into<usize>,
+    {
+        self.vec.insert(self.key.clone(), value).unwrap()
+    }
+
+    pub fn into_mut(self) -> &'a mut V
+    where
+        K: Clone + Into<usize>,
+    {
+        self.vec.get_mut(&self.key).unwrap()
+    }
+
+    pub fn key(&self) -> &K {
+        &self.key
+    }
+
+    pub fn remove(self) -> V
+    where
+        K: Clone + Into<usize>,
+    {
+        self.vec.remove(&self.key).unwrap()
+    }
+
+    pub fn remove_entry(self) -> (K, V)
+    where
+        K: Clone + Into<usize>,
+    {
+        let v = self.vec.remove(&self.key).unwrap();
+        (self.key, v)
+    }
+}
+
+impl<K: Debug, V> Debug for OccupiedEntry<'_, K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("OccupiedEntry").field(self.key()).finish()
+    }
+}
+
+pub struct VacantEntry<'a, K, V> {
+    key: K,
+    vec: &'a mut VecMap<K, V>,
+}
+
+impl<'a, K, V> VacantEntry<'a, K, V> {
+    pub fn key(&self) -> &K {
+        &self.key
+    }
+
+    pub fn into_key(self) -> K {
+        self.key
+    }
+
+    pub fn insert(self, value: V) -> &'a mut V
+    where
+        K: Clone + Into<usize>,
+    {
+        self.vec.insert(self.key.clone(), value);
+        self.vec.get_mut(&self.key).unwrap()
+    }
+}
+
+impl<K: Debug, V> Debug for VacantEntry<'_, K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("VacantEntry").field(self.key()).finish()
     }
 }
 
