@@ -1,4 +1,8 @@
-use std::{iter::Enumerate, marker::PhantomData, mem::replace};
+use std::{
+    iter::{Enumerate, FromIterator},
+    marker::PhantomData,
+    mem::replace,
+};
 
 pub struct VecMap<K, V> {
     _k: PhantomData<K>,
@@ -133,6 +137,42 @@ impl<K, V> VecMap<K, V> {
 
     pub fn values_mut(&mut self) -> ValuesMut<K, V> {
         ValuesMut(self.iter_mut())
+    }
+}
+
+impl<K, V> Default for VecMap<K, V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<K, V> Extend<(K, V)> for VecMap<K, V>
+where
+    K: Into<usize>,
+{
+    fn extend<T>(&mut self, iter: T)
+    where
+        T: IntoIterator<Item = (K, V)>,
+    {
+        for (k, v) in iter {
+            self.insert(k, v);
+        }
+    }
+}
+
+impl<K, V> FromIterator<(K, V)> for VecMap<K, V>
+where
+    K: Into<usize>,
+{
+    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+        let iter = iter.into_iter();
+        let mut vec = Self::with_capacity(iter.size_hint().0);
+
+        for (k, v) in iter {
+            vec.insert(k, v);
+        }
+
+        vec
     }
 }
 
