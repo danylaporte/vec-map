@@ -148,7 +148,7 @@ impl<K, V> VecMap<K, V> {
         }
     }
 
-    pub fn values(&mut self) -> Values<K, V> {
+    pub fn values(&self) -> Values<K, V> {
         Values(self.iter())
     }
 
