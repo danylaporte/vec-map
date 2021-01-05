@@ -28,6 +28,11 @@ impl<K, V> VecMap<K, V> {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.len = 0;
+        self.vec.clear();
+    }
+
     pub fn contains_key(&self, key: &K) -> bool
     where
         K: Clone + Into<usize>,
