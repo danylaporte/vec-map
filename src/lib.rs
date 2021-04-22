@@ -350,11 +350,20 @@ where
     }
 }
 
-#[derive(Clone)]
 pub struct Iter<'a, K, V> {
     _k: PhantomData<K>,
     it: Enumerate<std::slice::Iter<'a, Option<V>>>,
     len: usize,
+}
+
+impl<'a, K, V> Clone for Iter<'a, K, V> {
+    fn clone(&self) -> Self {
+        Self {
+            _k: self._k,
+            it: self.it.clone(),
+            len: self.len,
+        }
+    }
 }
 
 impl<'a, K, V> DoubleEndedIterator for Iter<'a, K, V>
@@ -443,13 +452,20 @@ where
     }
 }
 
-#[derive(Clone)]
 pub struct Keys<'a, K, V>(Iter<'a, K, V>);
+
+impl<'a, K, V> Clone for Keys<'a, K, V> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 
 impl<'a, K, V> DoubleEndedIterator for Keys<'a, K, V>
 where
     K: From<usize>,
 {
+    #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.0.next_back().map(|(k, _)| k)
     }
@@ -461,6 +477,7 @@ where
 {
     type Item = K;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next().map(|(k, _)| k)
     }
@@ -563,8 +580,14 @@ impl<K: Debug, V> Debug for VacantEntry<'_, K, V> {
     }
 }
 
-#[derive(Clone)]
 pub struct Values<'a, K, V>(Iter<'a, K, V>);
+
+impl<'a, K, V> Clone for Values<'a, K, V> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 
 impl<'a, K, V> DoubleEndedIterator for Values<'a, K, V>
 where
