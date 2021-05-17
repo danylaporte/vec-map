@@ -157,6 +157,19 @@ impl<K, V> VecMap<K, V> {
     }
 }
 
+impl<K, V> Clone for VecMap<K, V>
+where
+    V: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            _k: PhantomData,
+            len: self.len,
+            vec: self.vec.clone(),
+        }
+    }
+}
+
 impl<K, V> Default for VecMap<K, V> {
     fn default() -> Self {
         Self::new()
@@ -226,6 +239,21 @@ where
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter_mut()
+    }
+}
+
+impl<K, V> Eq for VecMap<K, V> where V: Eq + PartialEq {}
+
+impl<K, V> PartialEq for VecMap<K, V>
+where
+    V: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        fn iter<T>(vec: &Vec<Option<T>>) -> impl Iterator<Item = (usize, &Option<T>)> {
+            vec.into_iter().enumerate().filter(|(_, v)| v.is_some())
+        }
+
+        iter(&self.vec).eq(iter(&other.vec))
     }
 }
 
