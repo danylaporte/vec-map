@@ -76,7 +76,8 @@ impl<K, V> VecMap<K, V> {
     {
         let index: usize = key.into();
         self.ensure_index(index);
-        let out = replace(&mut self.vec[index], Some(value));
+
+        let out = replace(unsafe { self.vec.get_unchecked_mut(index) }, Some(value));
 
         if out.is_none() {
             self.len += 1;
@@ -680,4 +681,23 @@ where
     K: Clone + Into<usize>,
 {
     key.clone().into()
+}
+
+#[test]
+fn test_insert() {
+    let mut vec = VecMap::new();
+
+    for n in (0..30usize).rev() {
+        assert!(vec.insert(n, n).is_none());
+    }
+
+    assert_eq!(vec.len(), 30);
+
+    for n in (0..30usize).rev() {
+        let old = vec.insert(n, 100 - n);
+
+        assert_eq!(n, old.unwrap());
+    }
+
+    assert_eq!(vec.len(), 30);
 }
