@@ -1,3 +1,9 @@
+#[cfg(feature = "rayon")]
+mod rayon_impl;
+
+#[cfg(feature = "rayon")]
+pub use rayon_impl::*;
+
 use std::{
     fmt::{self, Debug},
     iter::{Enumerate, FromIterator},
