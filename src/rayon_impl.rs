@@ -10,9 +10,11 @@ use std::marker::PhantomData;
 impl<K, V> VecMap<K, V>
 where
     K: From<usize> + Send,
-    V: Sync,
 {
-    pub fn par_iter(&self) -> ParIter<K, V> {
+    pub fn par_iter(&self) -> ParIter<K, V>
+    where
+        V: Sync,
+    {
         ParIter {
             _k: PhantomData,
             iter: self.vec.into_par_iter(),
@@ -39,7 +41,7 @@ impl<'a, K: From<usize> + Send, V: Sync> IntoParallelIterator for &'a VecMap<K, 
     }
 }
 
-impl<'a, K: From<usize> + Send, V: Send + Sync> IntoParallelIterator for &'a mut VecMap<K, V> {
+impl<'a, K: From<usize> + Send, V: Send> IntoParallelIterator for &'a mut VecMap<K, V> {
     type Iter = ParIterMut<'a, K, V>;
     type Item = (K, &'a mut V);
 
@@ -76,7 +78,7 @@ pub struct ParIterMut<'a, K, V: Send> {
 impl<'a, K, V> ParallelIterator for ParIterMut<'a, K, V>
 where
     K: From<usize> + Send,
-    V: Send + Sync,
+    V: Send,
 {
     type Item = (K, &'a mut V);
 
