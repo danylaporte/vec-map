@@ -92,14 +92,6 @@ impl<K, V> VecMap<K, V> {
         out
     }
 
-    pub fn into_iter(self) -> IntoIter<K, V> {
-        IntoIter {
-            _k: PhantomData,
-            it: self.vec.into_iter().enumerate(),
-            len: self.len,
-        }
-    }
-
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
@@ -139,6 +131,38 @@ impl<K, V> VecMap<K, V> {
         }
 
         out
+    }
+
+    /// Retains only the elements specified by the predicate.
+    ///
+    /// In other words, remove all elements e such that f(&e) returns false. This method operates in place,
+    /// visiting each element exactly once in the original order, and preserves the order of the retained elements.
+    ///
+    /// # Example
+    /// ```
+    /// use vec_map::VecMap;
+    ///
+    /// let mut map = VecMap::new();
+    /// map.insert(1usize, 10);
+    /// map.insert(2usize, 11);
+    ///
+    /// map.retain(|_k, v| v > &10);
+    ///
+    /// assert_eq!(map.len(), 1);
+    /// assert_eq!(map.into_iter().collect::<Vec<_>>(), vec![(2, 11)]);
+    /// ```
+    pub fn retain<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&K, &V) -> bool,
+        K: From<usize>,
+    {
+        let len = &mut self.len;
+        self.vec.iter_mut().enumerate().for_each(|(index, item)| {
+            if item.as_ref().map_or(false, |v| !f(&K::from(index), v)) {
+                *item = None;
+                *len -= 1;
+            }
+        });
     }
 
     pub fn shrink_to_fit(&mut self) {
@@ -221,7 +245,11 @@ where
     type IntoIter = IntoIter<K, V>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.into_iter()
+        IntoIter {
+            _k: PhantomData,
+            it: self.vec.into_iter().enumerate(),
+            len: self.len,
+        }
     }
 }
 
@@ -256,8 +284,8 @@ where
     V: PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
-        fn iter<T>(vec: &Vec<Option<T>>) -> impl Iterator<Item = (usize, &Option<T>)> {
-            vec.into_iter().enumerate().filter(|(_, v)| v.is_some())
+        fn iter<T>(vec: &[Option<T>]) -> impl Iterator<Item = (usize, &Option<T>)> {
+            vec.iter().enumerate().filter(|(_, v)| v.is_some())
         }
 
         iter(&self.vec).eq(iter(&other.vec))
@@ -367,7 +395,7 @@ where
     type Item = (K, V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some((index, item)) = self.it.next() {
+        for (index, item) in self.it.by_ref() {
             if let Some(v) = item {
                 return Some((index.into(), v));
             }
@@ -423,7 +451,7 @@ where
     type Item = (K, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some((index, item)) = self.it.next() {
+        for (index, item) in self.it.by_ref() {
             if let Some(v) = item {
                 return Some((index.into(), v));
             }
@@ -469,7 +497,7 @@ where
     type Item = (K, &'a mut V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some((index, item)) = self.it.next() {
+        for (index, item) in self.it.by_ref() {
             if let Some(v) = item {
                 return Some((index.into(), v));
             }

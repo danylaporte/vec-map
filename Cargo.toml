@@ -10,3 +10,6 @@ default = ["rayon"]
 
 [dependencies]
 rayon = { version = "1", optional = true }
+
+[dev-dependencies]
+rayon = "1"

@@ -5,7 +5,10 @@ use rayon::{
     },
     slice::{Iter, IterMut},
 };
-use std::marker::PhantomData;
+use std::{
+    marker::PhantomData,
+    sync::atomic::{AtomicUsize, Ordering::Relaxed},
+};
 
 impl<K, V> VecMap<K, V>
 where
@@ -29,6 +32,43 @@ where
             _k: PhantomData,
             iter: self.vec.par_iter_mut(),
         }
+    }
+
+    /// Retains only the elements specified by the predicate.
+    ///
+    /// Same as [VecMap::retain] but in parallel.
+    ///
+    /// # Example
+    /// ```
+    /// use vec_map::VecMap;
+    ///
+    /// let mut map = VecMap::new();
+    /// map.insert(1usize, 10);
+    /// map.insert(2usize, 11);
+    ///
+    /// map.par_retain(|_k, v| v > &10);
+    ///
+    /// assert_eq!(map.len(), 1);
+    /// assert_eq!(map.into_iter().collect::<Vec<_>>(), vec![(2, 11)]);
+    /// ```
+    pub fn par_retain<F>(&mut self, f: F)
+    where
+        F: Fn(&K, &V) -> bool + Sync,
+        V: Send,
+    {
+        let len = AtomicUsize::new(self.len());
+
+        self.vec
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(index, item)| {
+                if item.as_ref().map_or(false, |v| !f(&K::from(index), v)) {
+                    *item = None;
+                    len.fetch_sub(1, Relaxed);
+                }
+            });
+
+        self.len = len.load(Relaxed);
     }
 }
 
