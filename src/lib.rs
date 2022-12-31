@@ -18,6 +18,7 @@ pub struct VecMap<K, V> {
 }
 
 impl<K, V> VecMap<K, V> {
+    #[inline]
     pub fn new() -> Self {
         Self {
             _k: PhantomData,
@@ -62,6 +63,7 @@ impl<K, V> VecMap<K, V> {
         }
     }
 
+    #[inline]
     pub fn get(&self, key: &K) -> Option<&V>
     where
         K: Clone + Into<usize>,
@@ -96,6 +98,7 @@ impl<K, V> VecMap<K, V> {
         self.len == 0
     }
 
+    #[inline]
     pub fn iter(&self) -> Iter<K, V> {
         Iter {
             _k: PhantomData,
@@ -157,6 +160,7 @@ impl<K, V> VecMap<K, V> {
         K: From<usize>,
     {
         let len = &mut self.len;
+
         self.vec.iter_mut().enumerate().for_each(|(index, item)| {
             if item.as_ref().map_or(false, |v| !f(&K::from(index), v)) {
                 *item = None;
@@ -227,13 +231,12 @@ where
 {
     fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
         let iter = iter.into_iter();
-        let mut vec = Self::with_capacity(iter.size_hint().0);
+        let capacity = iter.size_hint().0;
 
-        for (k, v) in iter {
+        iter.fold(Self::with_capacity(capacity), |mut vec, (k, v)| {
             vec.insert(k, v);
-        }
-
-        vec
+            vec
+        })
     }
 }
 
@@ -244,6 +247,7 @@ where
     type Item = (K, V);
     type IntoIter = IntoIter<K, V>;
 
+    #[inline]
     fn into_iter(self) -> Self::IntoIter {
         IntoIter {
             _k: PhantomData,
@@ -260,6 +264,7 @@ where
     type Item = (K, &'a V);
     type IntoIter = Iter<'a, K, V>;
 
+    #[inline]
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
@@ -395,8 +400,8 @@ where
     type Item = (K, V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        for (index, item) in self.it.by_ref() {
-            if let Some(v) = item {
+        while let Some((index, opt)) = self.it.next() {
+            if let Some(v) = opt {
                 return Some((index.into(), v));
             }
         }
@@ -451,8 +456,8 @@ where
     type Item = (K, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        for (index, item) in self.it.by_ref() {
-            if let Some(v) = item {
+        while let Some((index, opt)) = self.it.next() {
+            if let Some(v) = opt {
                 return Some((index.into(), v));
             }
         }
@@ -460,10 +465,12 @@ where
         None
     }
 
+    #[inline]
     fn count(self) -> usize {
         self.len
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len, Some(self.len))
     }
