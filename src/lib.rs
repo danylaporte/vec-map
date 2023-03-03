@@ -19,7 +19,7 @@ pub struct VecMap<K, V> {
 
 impl<K, V> VecMap<K, V> {
     #[inline]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             _k: PhantomData,
             len: 0,
