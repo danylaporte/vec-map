@@ -19,6 +19,7 @@ pub struct VecMap<K, V> {
 
 impl<K, V> VecMap<K, V> {
     #[inline]
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             _k: PhantomData,
@@ -27,6 +28,8 @@ impl<K, V> VecMap<K, V> {
         }
     }
 
+    #[inline]
+    #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             _k: PhantomData,
@@ -44,7 +47,7 @@ impl<K, V> VecMap<K, V> {
     where
         K: Clone + Into<usize>,
     {
-        self.vec.get(index(key)).map_or(false, |o| o.is_some())
+        self.vec.get(index(key)).map_or(false, Option::is_some)
     }
 
     fn ensure_index(&mut self, index: usize) {
@@ -64,18 +67,21 @@ impl<K, V> VecMap<K, V> {
     }
 
     #[inline]
+    #[must_use]
     pub fn get(&self, key: &K) -> Option<&V>
     where
         K: Clone + Into<usize>,
     {
-        self.vec.get(index(key)).and_then(|v| v.as_ref())
+        self.vec.get(index(key)).and_then(Option::as_ref)
     }
 
+    #[inline]
+    #[must_use]
     pub fn get_mut(&mut self, key: &K) -> Option<&mut V>
     where
         K: Clone + Into<usize>,
     {
-        self.vec.get_mut(index(key)).and_then(|v| v.as_mut())
+        self.vec.get_mut(index(key)).and_then(Option::as_mut)
     }
 
     pub fn insert(&mut self, key: K, value: V) -> Option<V>
@@ -107,6 +113,7 @@ impl<K, V> VecMap<K, V> {
         }
     }
 
+    #[inline]
     pub fn iter_mut(&mut self) -> IterMut<K, V> {
         IterMut {
             _k: PhantomData,
@@ -115,10 +122,12 @@ impl<K, V> VecMap<K, V> {
         }
     }
 
+    #[inline]
     pub fn keys(&self) -> Keys<K, V> {
         Keys(self.iter())
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.len
     }
@@ -127,7 +136,7 @@ impl<K, V> VecMap<K, V> {
     where
         K: Clone + Into<usize>,
     {
-        let out = self.vec.get_mut(index(key)).and_then(|v| v.take());
+        let out = self.vec.get_mut(index(key)).and_then(Option::take);
 
         if out.is_some() {
             self.len -= 1;
@@ -438,6 +447,7 @@ impl<'a, K, V> DoubleEndedIterator for Iter<'a, K, V>
 where
     K: From<usize>,
 {
+    #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((index, item)) = self.it.next_back() {
             if let Some(v) = item {
@@ -455,6 +465,7 @@ where
 {
     type Item = (K, &'a V);
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         while let Some((index, opt)) = self.it.next() {
             if let Some(v) = opt {
@@ -486,6 +497,7 @@ impl<'a, K, V> DoubleEndedIterator for IterMut<'a, K, V>
 where
     K: From<usize>,
 {
+    #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         while let Some((index, item)) = self.it.next_back() {
             if let Some(v) = item {
@@ -503,6 +515,7 @@ where
 {
     type Item = (K, &'a mut V);
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         for (index, item) in self.it.by_ref() {
             if let Some(v) = item {
@@ -513,10 +526,12 @@ where
         None
     }
 
+    #[inline]
     fn count(self) -> usize {
         self.len
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len, Some(self.len))
     }
@@ -552,10 +567,12 @@ where
         self.0.next().map(|(k, _)| k)
     }
 
+    #[inline]
     fn count(self) -> usize {
         self.0.count()
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.0.size_hint()
     }
