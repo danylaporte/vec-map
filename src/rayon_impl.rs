@@ -1,78 +1,30 @@
 use crate::VecMap;
 use rayon::{
     iter::{
-        IndexedParallelIterator, IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
+        IntoParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
     },
     slice::{Iter, IterMut},
 };
-use std::{
-    marker::PhantomData,
-    sync::atomic::{AtomicUsize, Ordering::Relaxed},
-};
 
-impl<K, V> VecMap<K, V>
-where
-    K: From<usize> + Send,
-{
+impl<K, V> VecMap<K, V> {
     pub fn par_iter(&self) -> ParIter<K, V>
     where
+        K: Sync,
         V: Sync,
     {
-        ParIter {
-            _k: PhantomData,
-            iter: self.vec.into_par_iter(),
-        }
+        ParIter(self.rows.par_iter())
     }
 
     pub fn par_iter_mut(&mut self) -> ParIterMut<K, V>
     where
+        K: Send,
         V: Send,
     {
-        ParIterMut {
-            _k: PhantomData,
-            iter: self.vec.par_iter_mut(),
-        }
-    }
-
-    /// Retains only the elements specified by the predicate.
-    ///
-    /// Same as [VecMap::retain] but in parallel.
-    ///
-    /// # Example
-    /// ```
-    /// use vec_map::VecMap;
-    ///
-    /// let mut map = VecMap::new();
-    /// map.insert(1usize, 10);
-    /// map.insert(2usize, 11);
-    ///
-    /// map.par_retain(|_k, v| v > &10);
-    ///
-    /// assert_eq!(map.len(), 1);
-    /// assert_eq!(map.into_iter().collect::<Vec<_>>(), vec![(2, 11)]);
-    /// ```
-    pub fn par_retain<F>(&mut self, f: F)
-    where
-        F: Fn(&K, &V) -> bool + Sync,
-        V: Send,
-    {
-        let len = AtomicUsize::new(self.len());
-
-        self.vec
-            .par_iter_mut()
-            .enumerate()
-            .for_each(|(index, item)| {
-                if item.as_ref().map_or(false, |v| !f(&K::from(index), v)) {
-                    *item = None;
-                    len.fetch_sub(1, Relaxed);
-                }
-            });
-
-        self.len = len.load(Relaxed);
+        ParIterMut(self.rows.par_iter_mut())
     }
 }
 
-impl<'a, K: From<usize> + Send, V: Sync> IntoParallelIterator for &'a VecMap<K, V> {
+impl<'a, K: Copy + Send + Sync, V: Sync> IntoParallelIterator for &'a VecMap<K, V> {
     type Iter = ParIter<'a, K, V>;
     type Item = (K, &'a V);
 
@@ -81,7 +33,7 @@ impl<'a, K: From<usize> + Send, V: Sync> IntoParallelIterator for &'a VecMap<K, 
     }
 }
 
-impl<'a, K: From<usize> + Send, V: Send> IntoParallelIterator for &'a mut VecMap<K, V> {
+impl<'a, K: Copy + Send, V: Send> IntoParallelIterator for &'a mut VecMap<K, V> {
     type Iter = ParIterMut<'a, K, V>;
     type Item = (K, &'a mut V);
 
@@ -90,34 +42,24 @@ impl<'a, K: From<usize> + Send, V: Send> IntoParallelIterator for &'a mut VecMap
     }
 }
 
-pub struct ParIter<'a, K, V: Sync> {
-    iter: Iter<'a, Option<V>>,
-    _k: PhantomData<K>,
-}
+pub struct ParIter<'a, K: Sync, V: Sync>(Iter<'a, (K, V)>);
 
-impl<'a, K: From<usize> + Send, V: Sync> ParallelIterator for ParIter<'a, K, V> {
+impl<'a, K: Copy + Send + Sync, V: Sync> ParallelIterator for ParIter<'a, K, V> {
     type Item = (K, &'a V);
 
     fn drive_unindexed<C>(self, consumer: C) -> C::Result
     where
         C: rayon::iter::plumbing::UnindexedConsumer<Self::Item>,
     {
-        self.iter
-            .enumerate()
-            .filter_map(|(index, item)| Some((index, item.as_ref()?)))
-            .map(|(index, item)| (index.into(), item))
-            .drive_unindexed(consumer)
+        self.0.map(|t| (t.0, &t.1)).drive_unindexed(consumer)
     }
 }
 
-pub struct ParIterMut<'a, K, V: Send> {
-    iter: IterMut<'a, Option<V>>,
-    _k: PhantomData<K>,
-}
+pub struct ParIterMut<'a, K: Send, V: Send>(IterMut<'a, (K, V)>);
 
 impl<'a, K, V> ParallelIterator for ParIterMut<'a, K, V>
 where
-    K: From<usize> + Send,
+    K: Copy + Send,
     V: Send,
 {
     type Item = (K, &'a mut V);
@@ -126,11 +68,7 @@ where
     where
         C: rayon::iter::plumbing::UnindexedConsumer<Self::Item>,
     {
-        self.iter
-            .enumerate()
-            .filter_map(|(index, item)| Some((index, item.as_mut()?)))
-            .map(|(index, item)| (index.into(), item))
-            .drive_unindexed(consumer)
+        self.0.map(|t| (t.0, &mut t.1)).drive_unindexed(consumer)
     }
 }
 
