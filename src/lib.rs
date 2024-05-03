@@ -4,6 +4,14 @@ mod rayon_impl;
 #[cfg(feature = "rayon")]
 pub use rayon_impl::*;
 
+#[cfg(feature = "serde")]
+use serde::{
+    de::{MapAccess, Visitor},
+    Deserialize, Deserializer, Serialize, Serializer,
+};
+#[cfg(feature = "serde")]
+use std::marker::PhantomData;
+
 use std::{
     fmt::{self, Debug},
     iter::FromIterator,
@@ -38,7 +46,7 @@ impl<K, V> VecMap<K, V> {
         self.keys.clear();
         self.rows.clear();
     }
-    
+
     #[must_use]
     pub fn contains_key(&self, key: &K) -> bool
     where
@@ -323,6 +331,31 @@ where
 {
     fn eq(&self, other: &Self) -> bool {
         self.rows == other.rows
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de, K, V> Deserialize<'de> for VecMap<K, V>
+where
+    K: Copy + Deserialize<'de>,
+    V: Deserialize<'de>,
+    usize: From<K>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_map(Visit(PhantomData))
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<K: Serialize, V: Serialize> Serialize for VecMap<K, V> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_map(self.rows.iter().map(|t| (&t.0, &t.1)))
     }
 }
 
@@ -692,6 +725,36 @@ impl<'a, K, V> Iterator for ValuesMut<'a, K, V> {
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.0.size_hint()
+    }
+}
+
+#[cfg(feature = "serde")]
+struct Visit<K, V>(PhantomData<(K, V)>);
+
+#[cfg(feature = "serde")]
+impl<'de, K, V> Visitor<'de> for Visit<K, V>
+where
+    K: Copy + Deserialize<'de>,
+    V: Deserialize<'de>,
+    usize: From<K>,
+{
+    type Value = VecMap<K, V>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("VecMap")
+    }
+
+    fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+    where
+        M: MapAccess<'de>,
+    {
+        let mut map = VecMap::with_capacity(access.size_hint().unwrap_or(0));
+
+        while let Some((key, value)) = access.next_entry()? {
+            map.insert(key, value);
+        }
+
+        Ok(map)
     }
 }
 
