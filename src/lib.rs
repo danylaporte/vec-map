@@ -292,11 +292,8 @@ impl<K, V> IntoIterator for VecMap<K, V> {
     }
 }
 
-impl<'a, K, V> IntoIterator for &'a VecMap<K, V>
-where
-    K: Copy,
-{
-    type Item = (K, &'a V);
+impl<'a, K, V> IntoIterator for &'a VecMap<K, V> {
+    type Item = (&'a K, &'a V);
     type IntoIter = Iter<'a, K, V>;
 
     #[inline]
@@ -305,11 +302,8 @@ where
     }
 }
 
-impl<'a, K, V> IntoIterator for &'a mut VecMap<K, V>
-where
-    K: Copy,
-{
-    type Item = (K, &'a mut V);
+impl<'a, K, V> IntoIterator for &'a mut VecMap<K, V> {
+    type Item = (&'a K, &'a mut V);
     type IntoIter = IterMut<'a, K, V>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -470,25 +464,19 @@ impl<'a, K, V> Clone for Iter<'a, K, V> {
     }
 }
 
-impl<'a, K, V> DoubleEndedIterator for Iter<'a, K, V>
-where
-    K: Copy,
-{
+impl<'a, K, V> DoubleEndedIterator for Iter<'a, K, V> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.0.next_back().map(|t| (t.0, &t.1))
+        self.0.next_back().map(|t| (&t.0, &t.1))
     }
 }
 
-impl<'a, K, V> Iterator for Iter<'a, K, V>
-where
-    K: Copy,
-{
-    type Item = (K, &'a V);
+impl<'a, K, V> Iterator for Iter<'a, K, V> {
+    type Item = (&'a K, &'a V);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|t| (t.0, &t.1))
+        self.0.next().map(|t| (&t.0, &t.1))
     }
 
     #[inline]
@@ -504,25 +492,19 @@ where
 
 pub struct IterMut<'a, K, V>(std::slice::IterMut<'a, (K, V)>);
 
-impl<'a, K, V> DoubleEndedIterator for IterMut<'a, K, V>
-where
-    K: Copy,
-{
+impl<'a, K, V> DoubleEndedIterator for IterMut<'a, K, V> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.0.next_back().map(|t| (t.0, &mut t.1))
+        self.0.next_back().map(|t| (&t.0, &mut t.1))
     }
 }
 
-impl<'a, K, V> Iterator for IterMut<'a, K, V>
-where
-    K: Copy,
-{
-    type Item = (K, &'a mut V);
+impl<'a, K, V> Iterator for IterMut<'a, K, V> {
+    type Item = (&'a K, &'a mut V);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|t| (t.0, &mut t.1))
+        self.0.next().map(|t| (&t.0, &mut t.1))
     }
 
     #[inline]
@@ -544,25 +526,19 @@ impl<'a, K, V> Clone for Keys<'a, K, V> {
     }
 }
 
-impl<'a, K, V> DoubleEndedIterator for Keys<'a, K, V>
-where
-    K: Copy,
-{
+impl<'a, K, V> DoubleEndedIterator for Keys<'a, K, V> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.0.next_back().map(|(k, _)| k)
+        self.0.next_back().map(|t| t.0)
     }
 }
 
-impl<'a, K, V> Iterator for Keys<'a, K, V>
-where
-    K: Copy,
-{
-    type Item = K;
+impl<'a, K, V> Iterator for Keys<'a, K, V> {
+    type Item = &'a K;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|(k, _)| k)
+        self.0.next().map(|t| t.0)
     }
 
     #[inline]

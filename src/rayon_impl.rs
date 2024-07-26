@@ -24,18 +24,18 @@ impl<K, V> VecMap<K, V> {
     }
 }
 
-impl<'a, K: Copy + Send + Sync, V: Sync> IntoParallelIterator for &'a VecMap<K, V> {
+impl<'a, K: Sync, V: Sync> IntoParallelIterator for &'a VecMap<K, V> {
     type Iter = ParIter<'a, K, V>;
-    type Item = (K, &'a V);
+    type Item = (&'a K, &'a V);
 
     fn into_par_iter(self) -> Self::Iter {
         self.par_iter()
     }
 }
 
-impl<'a, K: Copy + Send, V: Send> IntoParallelIterator for &'a mut VecMap<K, V> {
+impl<'a, K: Send + Sync, V: Send> IntoParallelIterator for &'a mut VecMap<K, V> {
     type Iter = ParIterMut<'a, K, V>;
-    type Item = (K, &'a mut V);
+    type Item = (&'a K, &'a mut V);
 
     fn into_par_iter(self) -> Self::Iter {
         self.par_iter_mut()
@@ -44,14 +44,14 @@ impl<'a, K: Copy + Send, V: Send> IntoParallelIterator for &'a mut VecMap<K, V> 
 
 pub struct ParIter<'a, K: Sync, V: Sync>(Iter<'a, (K, V)>);
 
-impl<'a, K: Copy + Send + Sync, V: Sync> ParallelIterator for ParIter<'a, K, V> {
-    type Item = (K, &'a V);
+impl<'a, K: Sync, V: Sync> ParallelIterator for ParIter<'a, K, V> {
+    type Item = (&'a K, &'a V);
 
     fn drive_unindexed<C>(self, consumer: C) -> C::Result
     where
         C: rayon::iter::plumbing::UnindexedConsumer<Self::Item>,
     {
-        self.0.map(|t| (t.0, &t.1)).drive_unindexed(consumer)
+        self.0.map(|t| (&t.0, &t.1)).drive_unindexed(consumer)
     }
 }
 
@@ -59,16 +59,16 @@ pub struct ParIterMut<'a, K: Send, V: Send>(IterMut<'a, (K, V)>);
 
 impl<'a, K, V> ParallelIterator for ParIterMut<'a, K, V>
 where
-    K: Copy + Send,
+    K: Send + Sync,
     V: Send,
 {
-    type Item = (K, &'a mut V);
+    type Item = (&'a K, &'a mut V);
 
     fn drive_unindexed<C>(self, consumer: C) -> C::Result
     where
         C: rayon::iter::plumbing::UnindexedConsumer<Self::Item>,
     {
-        self.0.map(|t| (t.0, &mut t.1)).drive_unindexed(consumer)
+        self.0.map(|t| (&t.0, &mut t.1)).drive_unindexed(consumer)
     }
 }
 
