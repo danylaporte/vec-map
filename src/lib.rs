@@ -188,7 +188,7 @@ impl<K, V> VecMap<K, V> {
     pub fn retain<F>(&mut self, mut f: F)
     where
         F: FnMut(&K, &V) -> bool,
-        K: Copy + From<usize>,
+        K: Copy,
     {
         let mut count = 0;
 
