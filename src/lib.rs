@@ -52,7 +52,7 @@ impl<K, V> VecMap<K, V> {
     where
         K: Copy + Into<usize>,
     {
-        self.keys.get(index(key)).map_or(false, Option::is_some)
+        self.keys.get(index(key)).is_some_and(Option::is_some)
     }
 
     #[must_use]
@@ -216,7 +216,7 @@ impl<K, V> VecMap<K, V> {
             .enumerate()
             .filter(|t| t.1.is_some())
             .map(|t| t.0)
-            .last()
+            .next_back()
         {
             self.keys.drain(index..);
         }
@@ -458,13 +458,13 @@ impl<K, V> Iterator for IntoIter<K, V> {
 
 pub struct Iter<'a, K, V>(std::slice::Iter<'a, (K, V)>);
 
-impl<'a, K, V> Clone for Iter<'a, K, V> {
+impl<K, V> Clone for Iter<'_, K, V> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<'a, K, V> DoubleEndedIterator for Iter<'a, K, V> {
+impl<K, V> DoubleEndedIterator for Iter<'_, K, V> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.0.next_back().map(|t| (&t.0, &t.1))
@@ -492,7 +492,7 @@ impl<'a, K, V> Iterator for Iter<'a, K, V> {
 
 pub struct IterMut<'a, K, V>(std::slice::IterMut<'a, (K, V)>);
 
-impl<'a, K, V> DoubleEndedIterator for IterMut<'a, K, V> {
+impl<K, V> DoubleEndedIterator for IterMut<'_, K, V> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.0.next_back().map(|t| (&t.0, &mut t.1))
@@ -520,13 +520,13 @@ impl<'a, K, V> Iterator for IterMut<'a, K, V> {
 
 pub struct Keys<'a, K, V>(Iter<'a, K, V>);
 
-impl<'a, K, V> Clone for Keys<'a, K, V> {
+impl<K, V> Clone for Keys<'_, K, V> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<'a, K, V> DoubleEndedIterator for Keys<'a, K, V> {
+impl<K, V> DoubleEndedIterator for Keys<'_, K, V> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.0.next_back().map(|t| t.0)
@@ -643,14 +643,14 @@ impl<K: Debug, V> Debug for VacantEntry<'_, K, V> {
 
 pub struct Values<'a, K, V>(std::slice::Iter<'a, (K, V)>);
 
-impl<'a, K, V> Clone for Values<'a, K, V> {
+impl<K, V> Clone for Values<'_, K, V> {
     #[inline]
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<'a, K, V> DoubleEndedIterator for Values<'a, K, V> {
+impl<K, V> DoubleEndedIterator for Values<'_, K, V> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.0.next_back().map(|(_, v)| v)
@@ -678,7 +678,7 @@ impl<'a, K, V> Iterator for Values<'a, K, V> {
 
 pub struct ValuesMut<'a, K, V>(std::slice::IterMut<'a, (K, V)>);
 
-impl<'a, K, V> DoubleEndedIterator for ValuesMut<'a, K, V> {
+impl<K, V> DoubleEndedIterator for ValuesMut<'_, K, V> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.0.next_back().map(|(_, v)| v)
