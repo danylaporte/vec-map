@@ -50,15 +50,15 @@ impl<K, V> VecMap<K, V> {
     #[must_use]
     pub fn contains_key(&self, key: &K) -> bool
     where
-        K: Copy + Into<usize>,
+        K: Clone + Into<u32>,
     {
         self.keys.get(index(key)).is_some_and(Option::is_some)
     }
 
     #[must_use]
-    pub fn entry(&mut self, key: K) -> Entry<K, V>
+    pub fn entry(&mut self, key: K) -> Entry<'_, K, V>
     where
-        K: Copy + Into<usize>,
+        K: Clone + Into<u32>,
     {
         if self.contains_key(&key) {
             Entry::Occupied(OccupiedEntry { key, vec: self })
@@ -71,7 +71,7 @@ impl<K, V> VecMap<K, V> {
     #[must_use]
     pub fn get(&self, key: &K) -> Option<&V>
     where
-        K: Copy + Into<usize>,
+        K: Clone + Into<u32>,
     {
         match self.keys.get(index(key)) {
             Some(Some(index)) => unsafe { Some(&self.rows.get_unchecked(*index as usize).1) },
@@ -83,7 +83,7 @@ impl<K, V> VecMap<K, V> {
     #[must_use]
     pub fn get_mut(&mut self, key: &K) -> Option<&mut V>
     where
-        K: Copy + Into<usize>,
+        K: Clone + Into<u32>,
     {
         match self.keys.get_mut(index(key)) {
             Some(Some(index)) => unsafe {
@@ -95,9 +95,9 @@ impl<K, V> VecMap<K, V> {
 
     pub fn insert(&mut self, key: K, value: V) -> Option<V>
     where
-        K: Copy + Into<usize>,
+        K: Clone + Into<u32>,
     {
-        let index: usize = key.into();
+        let index = key.clone().into() as usize;
 
         let index = match self.keys.get_mut(index) {
             Some(key) => key,
@@ -126,17 +126,17 @@ impl<K, V> VecMap<K, V> {
     }
 
     #[inline]
-    pub fn iter(&self) -> Iter<K, V> {
+    pub fn iter(&self) -> Iter<'_, K, V> {
         Iter(self.rows.iter())
     }
 
     #[inline]
-    pub fn iter_mut(&mut self) -> IterMut<K, V> {
+    pub fn iter_mut(&mut self) -> IterMut<'_, K, V> {
         IterMut(self.rows.iter_mut())
     }
 
     #[inline]
-    pub fn keys(&self) -> Keys<K, V> {
+    pub fn keys(&self) -> Keys<'_, K, V> {
         Keys(self.iter())
     }
 
@@ -147,7 +147,7 @@ impl<K, V> VecMap<K, V> {
 
     pub fn remove(&mut self, key: &K) -> Option<V>
     where
-        K: Copy + Into<usize>,
+        K: Clone + Into<u32>,
     {
         if let Some(row_index) = self
             .keys
@@ -177,8 +177,8 @@ impl<K, V> VecMap<K, V> {
     /// use vec_map::VecMap;
     ///
     /// let mut map = VecMap::new();
-    /// map.insert(1usize, 10);
-    /// map.insert(2usize, 11);
+    /// map.insert(1u32, 10);
+    /// map.insert(2u32, 11);
     ///
     /// map.retain(|_k, v| v > &10);
     ///
@@ -188,7 +188,7 @@ impl<K, V> VecMap<K, V> {
     pub fn retain<F>(&mut self, mut f: F)
     where
         F: FnMut(&K, &V) -> bool,
-        K: Copy,
+        K: Clone,
     {
         let mut count = 0;
 
@@ -225,11 +225,11 @@ impl<K, V> VecMap<K, V> {
         self.rows.shrink_to_fit();
     }
 
-    pub fn values(&self) -> Values<K, V> {
+    pub fn values(&self) -> Values<'_, K, V> {
         Values(self.rows.iter())
     }
 
-    pub fn values_mut(&mut self) -> ValuesMut<K, V> {
+    pub fn values_mut(&mut self) -> ValuesMut<'_, K, V> {
         ValuesMut(self.rows.iter_mut())
     }
 }
@@ -255,7 +255,7 @@ impl<K, V> Default for VecMap<K, V> {
 
 impl<K, V> Extend<(K, V)> for VecMap<K, V>
 where
-    K: Copy + Into<usize>,
+    K: Clone + Into<u32>,
 {
     fn extend<T>(&mut self, iter: T)
     where
@@ -269,7 +269,7 @@ where
 
 impl<K, V> FromIterator<(K, V)> for VecMap<K, V>
 where
-    K: Copy + Into<usize>,
+    K: Clone + Into<u32>,
 {
     fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
         let iter = iter.into_iter();
@@ -331,9 +331,8 @@ where
 #[cfg(feature = "serde")]
 impl<'de, K, V> Deserialize<'de> for VecMap<K, V>
 where
-    K: Copy + Deserialize<'de>,
+    K: Clone + Deserialize<'de> + Into<u32>,
     V: Deserialize<'de>,
-    usize: From<K>,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -361,7 +360,7 @@ pub enum Entry<'a, K: 'a, V: 'a> {
 impl<'a, K, V> Entry<'a, K, V> {
     pub fn or_insert(self, default: V) -> &'a mut V
     where
-        K: Copy + Into<usize>,
+        K: Clone + Into<u32>,
     {
         match self {
             Self::Occupied(o) => o.into_mut(),
@@ -377,7 +376,7 @@ impl<'a, K, V> Entry<'a, K, V> {
     /// ```
     /// use vec_map::VecMap;
     ///
-    /// let mut map: VecMap<usize, String> = VecMap::new();
+    /// let mut map: VecMap<u32, String> = VecMap::new();
     /// let s = "hoho".to_string();
     ///
     /// map.entry(2).or_insert_with(|| s);
@@ -387,7 +386,7 @@ impl<'a, K, V> Entry<'a, K, V> {
     pub fn or_insert_with<F>(self, default: F) -> &'a mut V
     where
         F: FnOnce() -> V,
-        K: Copy + Into<usize>,
+        K: Clone + Into<u32>,
     {
         match self {
             Self::Occupied(o) => o.into_mut(),
@@ -405,7 +404,7 @@ impl<'a, K, V> Entry<'a, K, V> {
     pub fn and_modify<F>(self, f: F) -> Self
     where
         F: FnOnce(&mut V),
-        K: Copy + Into<usize>,
+        K: Clone + Into<u32>,
     {
         match self {
             Self::Occupied(mut o) => {
@@ -418,7 +417,7 @@ impl<'a, K, V> Entry<'a, K, V> {
 
     pub fn or_default(self) -> &'a mut V
     where
-        K: Copy + Into<usize>,
+        K: Clone + Into<u32>,
         V: Default,
     {
         match self {
@@ -560,28 +559,28 @@ pub struct OccupiedEntry<'a, K, V> {
 impl<'a, K, V> OccupiedEntry<'a, K, V> {
     pub fn get(&self) -> &V
     where
-        K: Copy + Into<usize>,
+        K: Clone + Into<u32>,
     {
         self.vec.get(&self.key).unwrap()
     }
 
     pub fn get_mut(&mut self) -> &mut V
     where
-        K: Copy + Into<usize>,
+        K: Clone + Into<u32>,
     {
         self.vec.get_mut(&self.key).unwrap()
     }
 
     pub fn insert(&mut self, value: V) -> V
     where
-        K: Copy + Into<usize>,
+        K: Clone + Into<u32>,
     {
-        self.vec.insert(self.key, value).unwrap()
+        self.vec.insert(self.key.clone(), value).unwrap()
     }
 
     pub fn into_mut(self) -> &'a mut V
     where
-        K: Copy + Into<usize>,
+        K: Clone + Into<u32>,
     {
         self.vec.get_mut(&self.key).unwrap()
     }
@@ -592,14 +591,14 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
 
     pub fn remove(self) -> V
     where
-        K: Copy + Into<usize>,
+        K: Clone + Into<u32>,
     {
         self.vec.remove(&self.key).unwrap()
     }
 
     pub fn remove_entry(self) -> (K, V)
     where
-        K: Copy + Into<usize>,
+        K: Clone + Into<u32>,
     {
         let v = self.vec.remove(&self.key).unwrap();
         (self.key, v)
@@ -628,9 +627,9 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
 
     pub fn insert(self, value: V) -> &'a mut V
     where
-        K: Copy + Into<usize>,
+        K: Clone + Into<u32>,
     {
-        self.vec.insert(self.key, value);
+        self.vec.insert(self.key.clone(), value);
         self.vec.get_mut(&self.key).unwrap()
     }
 }
@@ -710,9 +709,8 @@ struct Visit<K, V>(PhantomData<(K, V)>);
 #[cfg(feature = "serde")]
 impl<'de, K, V> Visitor<'de> for Visit<K, V>
 where
-    K: Copy + Deserialize<'de>,
+    K: Clone + Deserialize<'de> + Into<u32>,
     V: Deserialize<'de>,
-    usize: From<K>,
 {
     type Value = VecMap<K, V>;
 
@@ -736,22 +734,22 @@ where
 
 fn index<K>(key: &K) -> usize
 where
-    K: Copy + Into<usize>,
+    K: Clone + Into<u32>,
 {
-    (*key).into()
+    (key.clone()).into() as usize
 }
 
 #[test]
 fn test_insert() {
     let mut vec = VecMap::new();
 
-    for n in (0..30usize).rev() {
+    for n in (0..30u32).rev() {
         assert!(vec.insert(n, n).is_none());
     }
 
     assert_eq!(vec.len(), 30);
 
-    for n in (0..30usize).rev() {
+    for n in (0..30u32).rev() {
         let old = vec.insert(n, 100 - n);
 
         assert_eq!(n, old.unwrap());
@@ -764,11 +762,11 @@ fn test_insert() {
 fn test_remove() {
     let mut vec = VecMap::new();
 
-    for n in 0..30usize {
+    for n in 0..30u32 {
         vec.insert(n, n);
     }
 
-    for n in 0..30usize {
+    for n in 0..30u32 {
         assert_eq!(vec.remove(&n), Some(n));
     }
 

@@ -7,7 +7,7 @@ use rayon::{
 };
 
 impl<K, V> VecMap<K, V> {
-    pub fn par_iter(&self) -> ParIter<K, V>
+    pub fn par_iter(&self) -> ParIter<'_, K, V>
     where
         K: Sync,
         V: Sync,
@@ -15,7 +15,7 @@ impl<K, V> VecMap<K, V> {
         ParIter(self.rows.par_iter())
     }
 
-    pub fn par_iter_mut(&mut self) -> ParIterMut<K, V>
+    pub fn par_iter_mut(&mut self) -> ParIterMut<'_, K, V>
     where
         K: Send,
         V: Send,
@@ -79,7 +79,7 @@ fn test_rayon() {
     let vm = (0..1000)
         .into_iter()
         .map(|i| (i, i))
-        .collect::<VecMap<usize, usize>>();
+        .collect::<VecMap<u32, u32>>();
 
     let count = vm.par_iter().filter(|(k, _)| k.rem(2) == 0).count();
     assert_eq!(count, 500);
@@ -93,7 +93,7 @@ fn test_rayon_mut() {
     let mut vm = (0..1000)
         .into_iter()
         .map(|i| (i, i))
-        .collect::<VecMap<usize, usize>>();
+        .collect::<VecMap<u32, u32>>();
 
     vm.par_iter_mut().for_each(|(_, v)| *v = *v * 2);
 
