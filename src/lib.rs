@@ -6,20 +6,21 @@ pub use rayon_impl::*;
 
 #[cfg(feature = "serde")]
 use serde::{
-    de::{MapAccess, Visitor},
     Deserialize, Deserializer, Serialize, Serializer,
+    de::{MapAccess, Visitor},
 };
 #[cfg(feature = "serde")]
 use std::marker::PhantomData;
 
 use std::{
     fmt::{self, Debug},
-    iter::FromIterator,
+    iter::{FromIterator, FusedIterator},
     mem::replace,
+    num::NonZeroU32,
 };
 
 pub struct VecMap<K, V> {
-    keys: Vec<Option<u32>>,
+    keys: Vec<Option<NonZeroU32>>,
     rows: Vec<(K, V)>,
 }
 
@@ -73,10 +74,9 @@ impl<K, V> VecMap<K, V> {
     where
         K: Clone + Into<u32>,
     {
-        match self.keys.get(index(key)) {
-            Some(Some(index)) => unsafe { Some(&self.rows.get_unchecked(*index as usize).1) },
-            _ => None,
-        }
+        let row_index = row_index(self.keys.get(index(key)).and_then(|index| *index)?);
+
+        unsafe { Some(&self.rows.get_unchecked(row_index).1) }
     }
 
     #[inline]
@@ -85,36 +85,34 @@ impl<K, V> VecMap<K, V> {
     where
         K: Clone + Into<u32>,
     {
-        match self.keys.get_mut(index(key)) {
-            Some(Some(index)) => unsafe {
-                Some(&mut self.rows.get_unchecked_mut(*index as usize).1)
-            },
-            _ => None,
-        }
+        let row_index = row_index(self.keys.get(index(key)).and_then(|index| *index)?);
+
+        unsafe { Some(&mut self.rows.get_unchecked_mut(row_index).1) }
     }
 
     pub fn insert(&mut self, key: K, value: V) -> Option<V>
     where
         K: Clone + Into<u32>,
     {
-        let index = key.clone().into() as usize;
+        let key_index = key.clone().into() as usize;
 
-        let index = match self.keys.get_mut(index) {
-            Some(key) => key,
+        let index = match self.keys.get_mut(key_index) {
+            Some(index) => index,
             None => {
-                self.keys.extend((self.keys.len()..=index).map(|_| None));
+                self.keys
+                    .extend((self.keys.len()..=key_index).map(|_| None));
 
-                unsafe { self.keys.get_unchecked_mut(index) }
+                unsafe { self.keys.get_unchecked_mut(key_index) }
             }
         };
 
         match index {
             &mut Some(index) => Some(replace(
-                &mut unsafe { self.rows.get_unchecked_mut(index as usize) }.1,
+                &mut unsafe { self.rows.get_unchecked_mut(row_index(index)) }.1,
                 value,
             )),
             None => {
-                *index = Some(self.rows.len() as u32);
+                *index = Some(stored_index(self.rows.len()));
                 self.rows.push((key, value));
                 None
             }
@@ -137,7 +135,7 @@ impl<K, V> VecMap<K, V> {
 
     #[inline]
     pub fn keys(&self) -> Keys<'_, K, V> {
-        Keys(self.iter())
+        Keys(self.rows.iter())
     }
 
     #[inline]
@@ -153,12 +151,12 @@ impl<K, V> VecMap<K, V> {
             .keys
             .get_mut(index(key))
             .and_then(Option::take)
-            .map(|i| i as usize)
+            .map(row_index)
         {
-            if self.rows.len() - 1 != row_index {
-                if let Some(k) = self.rows.last().map(|t| index(&t.0)) {
-                    *self.keys.get_mut(k).expect("key") = Some(row_index as u32);
-                }
+            if self.rows.len() - 1 != row_index
+                && let Some(k) = self.rows.last().map(|t| index(&t.0))
+            {
+                *self.keys.get_mut(k).expect("key") = Some(stored_index(row_index));
             }
 
             Some(self.rows.swap_remove(row_index).1)
@@ -190,45 +188,61 @@ impl<K, V> VecMap<K, V> {
         F: FnMut(&K, &V) -> bool,
         K: Clone,
     {
-        let mut count = 0;
+        let rows_len = self.rows.len();
+        let mut old_index = 0;
+        let mut next_index = 0;
+        let mut index_map: Option<Vec<Option<NonZeroU32>>> = None;
 
         self.rows.retain(|t| {
             let retain = f(&t.0, &t.1);
 
-            if !retain {
-                self.keys.iter_mut().for_each(|o| match *o {
-                    Some(index) if index == count => *o = None,
-                    Some(index) if index > count => *o = Some(index - 1),
-                    _ => {}
-                });
+            if retain {
+                if let Some(index_map) = &mut index_map {
+                    index_map.push(Some(stored_index(next_index)));
+                }
+                next_index += 1;
+            } else {
+                match &mut index_map {
+                    Some(index_map) => index_map.push(None),
+                    None => {
+                        let mut new_index_map = Vec::with_capacity(rows_len);
+                        new_index_map.extend((0..old_index).map(|index| Some(stored_index(index))));
+                        new_index_map.push(None);
+                        index_map = Some(new_index_map);
+                    }
+                }
             }
 
-            count += 1;
-
+            old_index += 1;
             retain
-        })
+        });
+
+        if let Some(index_map) = index_map {
+            for key in &mut self.keys {
+                if let Some(index) = *key {
+                    *key = index_map[row_index(index)];
+                }
+            }
+        }
     }
 
     pub fn shrink_to_fit(&mut self) {
-        if let Some(index) = self
-            .keys
-            .iter()
-            .enumerate()
-            .filter(|t| t.1.is_some())
-            .map(|t| t.0)
-            .next_back()
-        {
-            self.keys.drain(index..);
+        if let Some(index) = self.keys.iter().rposition(Option::is_some) {
+            self.keys.truncate(index + 1);
+        } else {
+            self.keys.clear();
         }
 
         self.keys.shrink_to_fit();
         self.rows.shrink_to_fit();
     }
 
+    #[inline]
     pub fn values(&self) -> Values<'_, K, V> {
         Values(self.rows.iter())
     }
 
+    #[inline]
     pub fn values_mut(&mut self) -> ValuesMut<'_, K, V> {
         ValuesMut(self.rows.iter_mut())
     }
@@ -306,6 +320,7 @@ impl<'a, K, V> IntoIterator for &'a mut VecMap<K, V> {
     type Item = (&'a K, &'a mut V);
     type IntoIter = IterMut<'a, K, V>;
 
+    #[inline]
     fn into_iter(self) -> Self::IntoIter {
         self.iter_mut()
     }
@@ -313,18 +328,34 @@ impl<'a, K, V> IntoIterator for &'a mut VecMap<K, V> {
 
 impl<K, V> Eq for VecMap<K, V>
 where
-    K: Eq + PartialEq,
-    V: Eq + PartialEq,
+    K: Clone + Eq + Into<u32>,
+    V: Eq,
 {
 }
 
 impl<K, V> PartialEq for VecMap<K, V>
 where
-    K: PartialEq,
+    K: Clone + Into<u32> + PartialEq,
     V: PartialEq,
 {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.rows == other.rows
+        if std::ptr::eq(self, other) || self.rows == other.rows {
+            return true;
+        }
+
+        self.len() == other.len()
+            && self.rows.iter().all(|(key, value)| {
+                other
+                    .keys
+                    .get(index(key))
+                    .and_then(|index| *index)
+                    .map(row_index)
+                    .is_some_and(|index| {
+                        let (other_key, other_value) = unsafe { other.rows.get_unchecked(index) };
+                        key == other_key && value == other_value
+                    })
+            })
     }
 }
 
@@ -455,9 +486,14 @@ impl<K, V> Iterator for IntoIter<K, V> {
     }
 }
 
+impl<K, V> ExactSizeIterator for IntoIter<K, V> {}
+
+impl<K, V> FusedIterator for IntoIter<K, V> {}
+
 pub struct Iter<'a, K, V>(std::slice::Iter<'a, (K, V)>);
 
 impl<K, V> Clone for Iter<'_, K, V> {
+    #[inline]
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
@@ -489,6 +525,10 @@ impl<'a, K, V> Iterator for Iter<'a, K, V> {
     }
 }
 
+impl<K, V> ExactSizeIterator for Iter<'_, K, V> {}
+
+impl<K, V> FusedIterator for Iter<'_, K, V> {}
+
 pub struct IterMut<'a, K, V>(std::slice::IterMut<'a, (K, V)>);
 
 impl<K, V> DoubleEndedIterator for IterMut<'_, K, V> {
@@ -517,9 +557,14 @@ impl<'a, K, V> Iterator for IterMut<'a, K, V> {
     }
 }
 
-pub struct Keys<'a, K, V>(Iter<'a, K, V>);
+impl<K, V> ExactSizeIterator for IterMut<'_, K, V> {}
+
+impl<K, V> FusedIterator for IterMut<'_, K, V> {}
+
+pub struct Keys<'a, K, V>(std::slice::Iter<'a, (K, V)>);
 
 impl<K, V> Clone for Keys<'_, K, V> {
+    #[inline]
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
@@ -528,7 +573,7 @@ impl<K, V> Clone for Keys<'_, K, V> {
 impl<K, V> DoubleEndedIterator for Keys<'_, K, V> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.0.next_back().map(|t| t.0)
+        self.0.next_back().map(|(k, _)| k)
     }
 }
 
@@ -537,7 +582,7 @@ impl<'a, K, V> Iterator for Keys<'a, K, V> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|t| t.0)
+        self.0.next().map(|(k, _)| k)
     }
 
     #[inline]
@@ -550,6 +595,10 @@ impl<'a, K, V> Iterator for Keys<'a, K, V> {
         self.0.size_hint()
     }
 }
+
+impl<K, V> ExactSizeIterator for Keys<'_, K, V> {}
+
+impl<K, V> FusedIterator for Keys<'_, K, V> {}
 
 pub struct OccupiedEntry<'a, K, V> {
     key: K,
@@ -675,6 +724,10 @@ impl<'a, K, V> Iterator for Values<'a, K, V> {
     }
 }
 
+impl<K, V> ExactSizeIterator for Values<'_, K, V> {}
+
+impl<K, V> FusedIterator for Values<'_, K, V> {}
+
 pub struct ValuesMut<'a, K, V>(std::slice::IterMut<'a, (K, V)>);
 
 impl<K, V> DoubleEndedIterator for ValuesMut<'_, K, V> {
@@ -702,6 +755,10 @@ impl<'a, K, V> Iterator for ValuesMut<'a, K, V> {
         self.0.size_hint()
     }
 }
+
+impl<K, V> ExactSizeIterator for ValuesMut<'_, K, V> {}
+
+impl<K, V> FusedIterator for ValuesMut<'_, K, V> {}
 
 #[cfg(feature = "serde")]
 struct Visit<K, V>(PhantomData<(K, V)>);
@@ -732,11 +789,22 @@ where
     }
 }
 
+#[inline]
 fn index<K>(key: &K) -> usize
 where
     K: Clone + Into<u32>,
 {
     (key.clone()).into() as usize
+}
+
+#[inline]
+fn row_index(index: NonZeroU32) -> usize {
+    (index.get() - 1) as usize
+}
+
+#[inline]
+fn stored_index(index: usize) -> NonZeroU32 {
+    NonZeroU32::new(u32::try_from(index + 1).expect("too many rows")).unwrap()
 }
 
 #[test]
@@ -759,16 +827,151 @@ fn test_insert() {
 }
 
 #[test]
+fn test_key_index_uses_compact_representation() {
+    assert_eq!(
+        std::mem::size_of::<Option<NonZeroU32>>(),
+        std::mem::size_of::<u32>()
+    );
+}
+
+#[test]
+fn test_equality_is_independent_of_row_order() {
+    let left = [(1u32, 10), (2, 20), (3, 30)]
+        .into_iter()
+        .collect::<VecMap<_, _>>();
+    let same_order = left.clone();
+    let mut right = [(3u32, 30), (1, 10), (2, 20)]
+        .into_iter()
+        .collect::<VecMap<_, _>>();
+
+    assert!(left == left);
+    assert!(left == same_order);
+    assert!(left == right);
+
+    assert_eq!(right.remove(&1), Some(10));
+    right.insert(1, 10);
+    assert!(left == right);
+
+    right.insert(2, 200);
+    assert!(left != right);
+    right.remove(&3);
+    assert!(left != right);
+}
+
+#[test]
 fn test_remove() {
     let mut vec = VecMap::new();
+
+    assert_eq!(vec.remove(&0), None);
 
     for n in 0..30u32 {
         vec.insert(n, n);
     }
 
-    for n in 0..30u32 {
-        assert_eq!(vec.remove(&n), Some(n));
+    assert_eq!(vec.remove(&29), Some(29));
+    assert_eq!(vec.remove(&29), None);
+
+    assert_eq!(vec.remove(&0), Some(0));
+    assert_eq!(vec.get(&28), Some(&28));
+    assert!(vec.contains_key(&28));
+    assert_eq!(vec.insert(28, 128), Some(28));
+    assert_eq!(vec.get(&28), Some(&128));
+
+    for n in 1..29u32 {
+        let expected = if n == 28 { 128 } else { n };
+        assert_eq!(vec.remove(&n), Some(expected));
     }
 
+    assert_eq!(vec.remove(&30), None);
     assert_eq!(vec.len(), 0);
+}
+
+#[test]
+fn test_retain_keeps_all() {
+    let mut vec = VecMap::new();
+
+    for n in 0..5u32 {
+        vec.insert(n, n * 10);
+    }
+
+    let mut visited = Vec::new();
+    vec.retain(|k, v| {
+        visited.push((*k, *v));
+        true
+    });
+
+    assert_eq!(visited, vec![(0, 0), (1, 10), (2, 20), (3, 30), (4, 40)]);
+    assert_eq!(vec.len(), 5);
+    assert_eq!(vec.into_iter().collect::<Vec<_>>(), visited);
+}
+
+#[test]
+fn test_retain_removes_all() {
+    let mut vec = VecMap::new();
+
+    for n in 0..5u32 {
+        vec.insert(n, n);
+    }
+
+    vec.retain(|_, _| false);
+
+    assert!(vec.is_empty());
+
+    for n in 0..5u32 {
+        assert_eq!(vec.get(&n), None);
+        assert!(!vec.contains_key(&n));
+        assert_eq!(vec.insert(n, n + 10), None);
+        assert_eq!(vec.remove(&n), Some(n + 10));
+    }
+}
+
+#[test]
+fn test_retain_updates_indices_and_preserves_order() {
+    let mut vec = VecMap::new();
+
+    for (key, value) in [(2u32, 20), (8, 80), (3, 30), (15, 150), (5, 50)] {
+        vec.insert(key, value);
+    }
+
+    vec.retain(|k, _| *k % 2 == 1);
+
+    assert_eq!(vec.len(), 3);
+    assert_eq!(
+        vec.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>(),
+        vec![(3, 30), (15, 150), (5, 50)]
+    );
+    assert_eq!(vec.get(&2), None);
+    assert_eq!(vec.get(&8), None);
+    assert_eq!(vec.get(&3), Some(&30));
+    assert_eq!(vec.get(&15), Some(&150));
+    assert_eq!(vec.get(&5), Some(&50));
+    assert_eq!(vec.insert(15, 151), Some(150));
+    assert_eq!(vec.remove(&5), Some(50));
+    assert_eq!(vec.remove(&3), Some(30));
+    assert_eq!(vec.remove(&15), Some(151));
+    assert!(vec.is_empty());
+}
+
+#[test]
+fn test_shrink_to_fit_preserves_last_key_and_releases_empty_index() {
+    let mut vec = VecMap::new();
+
+    vec.insert(2u32, 20);
+    vec.insert(100, 1000);
+    vec.insert(200, 2000);
+    assert_eq!(vec.remove(&200), Some(2000));
+
+    vec.shrink_to_fit();
+
+    assert_eq!(vec.keys.len(), 101);
+    assert_eq!(vec.get(&100), Some(&1000));
+    assert_eq!(vec.remove(&2), Some(20));
+    assert_eq!(vec.remove(&100), Some(1000));
+
+    vec.shrink_to_fit();
+
+    assert!(vec.keys.is_empty());
+    assert_eq!(vec.keys.capacity(), 0);
+    assert_eq!(vec.insert(1, 10), None);
+    assert_eq!(vec.get(&1), Some(&10));
 }

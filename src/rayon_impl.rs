@@ -1,7 +1,9 @@
 use crate::VecMap;
 use rayon::{
     iter::{
-        IntoParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
+        IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator,
+        IntoParallelRefMutIterator, ParallelIterator,
+        plumbing::{Consumer, ProducerCallback},
     },
     slice::{Iter, IterMut},
 };
@@ -55,6 +57,26 @@ impl<'a, K: Sync, V: Sync> ParallelIterator for ParIter<'a, K, V> {
     }
 }
 
+impl<'a, K: Sync, V: Sync> IndexedParallelIterator for ParIter<'a, K, V> {
+    fn drive<C>(self, consumer: C) -> C::Result
+    where
+        C: Consumer<Self::Item>,
+    {
+        self.0.map(|t| (&t.0, &t.1)).drive(consumer)
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn with_producer<CB>(self, callback: CB) -> CB::Output
+    where
+        CB: ProducerCallback<Self::Item>,
+    {
+        self.0.map(|t| (&t.0, &t.1)).with_producer(callback)
+    }
+}
+
 pub struct ParIterMut<'a, K: Send, V: Send>(IterMut<'a, (K, V)>);
 
 impl<'a, K, V> ParallelIterator for ParIterMut<'a, K, V>
@@ -72,6 +94,30 @@ where
     }
 }
 
+impl<'a, K, V> IndexedParallelIterator for ParIterMut<'a, K, V>
+where
+    K: Send + Sync,
+    V: Send,
+{
+    fn drive<C>(self, consumer: C) -> C::Result
+    where
+        C: Consumer<Self::Item>,
+    {
+        self.0.map(|t| (&t.0, &mut t.1)).drive(consumer)
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn with_producer<CB>(self, callback: CB) -> CB::Output
+    where
+        CB: ProducerCallback<Self::Item>,
+    {
+        self.0.map(|t| (&t.0, &mut t.1)).with_producer(callback)
+    }
+}
+
 #[test]
 fn test_rayon() {
     use std::ops::Rem;
@@ -86,6 +132,15 @@ fn test_rayon() {
 
     let count = (&vm).into_par_iter().count();
     assert_eq!(count, 1000);
+
+    let indexed = vm
+        .par_iter()
+        .enumerate()
+        .zip((0..1000u32).into_par_iter())
+        .all(|((index, (key, value)), expected)| {
+            index == expected as usize && *key == expected && *value == expected
+        });
+    assert!(indexed);
 }
 
 #[test]
@@ -95,7 +150,17 @@ fn test_rayon_mut() {
         .map(|i| (i, i))
         .collect::<VecMap<u32, u32>>();
 
-    vm.par_iter_mut().for_each(|(_, v)| *v = *v * 2);
+    vm.par_iter_mut().for_each(|(_, v)| *v *= 2);
 
-    (&mut vm).into_par_iter().for_each(|(_, v)| *v = *v + 1);
+    (&mut vm).into_par_iter().for_each(|(_, v)| *v += 1);
+
+    vm.par_iter_mut()
+        .enumerate()
+        .for_each(|(index, (_, value))| *value = index as u32);
+
+    assert!(
+        vm.iter()
+            .enumerate()
+            .all(|(index, (_, value))| { *value == index as u32 })
+    );
 }
